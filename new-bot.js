@@ -4,6 +4,24 @@ const flash = new (require("FlashEEPROM"))();
 const debug = true;
 const dht = require("DHT22").connect(D4);
 
+Object.defineProperty(Array.prototype, 'find', {
+    enumerable: false,
+    value: function (predicate) {
+        var list = Object(this);
+        var length = list.length >>> 0;
+        var thisArg = arguments[1];
+        var value;
+
+        for (var i = 0; i < length; i++) {
+            value = list[i];
+            if (predicate.call(thisArg, value, i, list)) {
+                return value;
+            }
+        }
+        return undefined;
+    }
+});
+
 const Adress = {
     wifi: 0,
     subs: 1,
@@ -32,6 +50,7 @@ class Bot {
         this._timerSet = 0;
         this._notifyEnable = true;
         this._status = false;
+        this._listeners = [];
 
         this._reconnectTimer = undefined;
 
@@ -41,18 +60,26 @@ class Bot {
         this.on = this.on.bind(this);
         this.off = this.off.bind(this);
         this.setTimer = this.setTimer.bind(this);
+        this.applyTimer = this.applyTimer.bind(this);
+        this.clearTimer = this.clearTimer.bind(this);
+        this.timerLost = this.timerLost.bind(this);
+        this.getTimer = this.getTimer.bind(this);
         this.setNotify = this.setNotify.bind(this);
         this.setHumidity = this.setHumidity.bind(this);
         this.getData = this.getData.bind(this);
         this.humidityWatcher = this.humidityWatcher.bind(this);
         this.checkUpdates = this.checkUpdates.bind(this);
+        this.setListener = this.setListener.bind(this);
+        this.removeListener = this.removeListener.bind(this);
+        this.applyHumidity = this.applyHumidity.bind(this);
+        this.readData = this.readData.bind(this);
 
         this._commands = {
             '/on': this.on,
             '/off': this.off,
+            '/set_hum': this.setHumidity,
             '/set_timer': this.setTimer,
             '/set_notify': this.setNotify,
-            '/set_hum': this.setHumidity,
             '/get_data': this.getData,
         };
     }
@@ -60,38 +87,56 @@ class Bot {
     on(id) {
         digitalWrite(this._mosfetPin, true);
         this._status = true;
-        this.sendMessage(id, this.getStatus());
+
+        if (id) {
+            this.sendMessage(id, this.getStatus());
+        }
     }
 
     off(id) {
         digitalWrite(this._mosfetPin, false);
         this._status = false;
-        this.sendMessage(id, this.getStatus());
+
+        if (id) {
+            this.sendMessage(id, this.getStatus());
+        }
     }
 
     getStatus() {
         return `The humidifier is ${this._status ? 'on' : 'off'}`;
     }
 
-    setTimer(time) {
-        this._timer = setTimeout(this.off, time);
-        this._timerSet = time;
-        return this.getTimer();
+    setTimer(id) {
+        let message = `${this.getTimer()}, send time in minutes, 0 - turn off the timer`;
+        this.setListener(id, this.applyTimer);
+        this.sendMessage(id, message);
+    }
+
+    applyTimer(id, time) {
+        time = parseInt(time);
+
+        if (time === 0) {
+            this.clearTimer();
+        } else {
+            let interval = time * 60 * 1000;
+            this._timerSet = new Date(new Date().ms + interval).ms;
+            this._timer = setTimeout(this.off, interval);
+        }
+        this.sendMessage(id, this.getTimer());
     }
 
     clearTimer() {
         clearTimeout(this._timer);
         this._timer = undefined;
-        return this.getTimer();
     }
 
     timerLost() {
-        return new Date() - new Date(this._timerSet);
+        return Math.round((new Date(this._timerSet).ms - new Date().ms) / 1000 / 60);
     }
 
     getTimer() {
         if (this._timer) {
-            return `Timer the timer is set to ${this._timerLost() / 1000 / 60} minutes`;
+            return `Timer is set to ${this.timerLost()} minutes`;
         } else {
             return `Timer is disabled`;
         }
@@ -106,17 +151,39 @@ class Bot {
         return `Notifications ${this._notifyEnable ? 'enabled' : 'disabled'}`;
     }
 
-    setHumidity(percent) {
+    setHumidity(id) {
+        let message = `The humidity level is set at ${this._humiditySet}, what level of humidity do you want?`;
+        this.setListener(id, this.applyHumidity);
+        this.sendMessage(id, message);
+    }
+
+    setListener(id, listener) {
+        this._listeners.push({
+            id,
+            listener
+        });
+    }
+
+    removeListener(id) {
+        this._listeners = this._listeners.filter(element => {
+            return element.id !== id;
+        });
+    }
+
+    applyHumidity(id, percent) {
         this._humiditySet = percent;
-        return this.getHumidity();
+        this.sendMessage(id, this.getHumidity());
     }
 
     getHumidity() {
         return `Humidity is set to ${this._humiditySet}%`;
     }
 
-    getData() {
-        return `Temp is ${this._temp}, Humidity is ${this._humidity}`;
+    getData(id) {
+        this.readData(() => {
+            let message = `Temp is ${this._temp},Humidity is ${this._humidity}`
+            this.sendMessage(id, message);
+        })
     }
 
     readData(callback) {
@@ -193,6 +260,7 @@ class Bot {
                 try {
                     answer = JSON.parse(contents);
                 } catch (err) {
+                    error(err);
                     debug && console.log(err, contents);
                 }
 
@@ -200,7 +268,7 @@ class Bot {
 
                 callback(answer);
 
-                debug && console.log(`Get data ${answer} from ${url}`);
+                debug && console.log(`Get data ${JSON.stringify(answer)} from ${url}`);
             });
         }).on('error', err => {
             debug && console.log(`Error then try to connect on ${url}`, err);
@@ -230,23 +298,50 @@ class Bot {
     parseMessage(message) {
         let text = message.text;
         let author = message.from.id;
+        let listener = this._listeners.find(element => element.id == author);
 
-        for (let command in this._commands) {
-            if (command === text) {
-                if (typeof this._commands[command] === 'function') {
-                    this._commands[command](author);
+        console.log('debug:')
+        console.log(listener, this._listeners, text, author)
+
+        if (listener) {
+            if (~text.indexOf('/')) {
+                this.removeListener(author);
+                let answer = `Ok, the previous command was canceled`;
+                this.sendMessage(author, answer, () => {
+                    this.parseMessage(message);
+                });
+                
+            } else {
+                listener.listener(author, text);
+                this.removeListener(author);
+            }
+        } else {
+
+            for (let command in this._commands) {
+                if (command === text) {
+                    if (typeof this._commands[command] === 'function') {
+                        this._commands[command](author);
+                    }
                 }
             }
         }
     }
 
-    sendMessage(id, message) {
+    
+
+    sendMessage(id, message, callback) {
+        debug && console.log(`Try send message: ${message} to ${id}`);
+
         const url = `${this._proxy}${encodeURIComponent(`https://api.telegram.org/bot${this._token}/sendMessage?chat_id=${id}&text=${message}`)}`;
 
         this.service(url, answer => {
             debug && console.log(`Sucscess send message: ${answer.result.text} to ${id}`);
+
+            if(typeof callback === 'function') {
+                callback();
+            }
         }, err => {
-            debug && console.log(`Failed send message: ${message} to ${id}, ${err}`);
+            debug && console.log(`Failed send message: ${message} to ${id}, ${err}, url is: ${url}`);
         });
     }
 }

@@ -1,0 +1,6 @@
+on - switch on the humidifier
+off - switch off the humidifier
+set_hum - set humidity percent
+get_data - get sensor data
+set_notify - setting reminders
+set_timer - timer setting
