@@ -24,7 +24,7 @@ Object.defineProperty(Array.prototype, 'find', {
 
 const Adress = {
     wifi: 0,
-    subs: 1,
+    subscribers: 1,
     settings: 2
 };
 
@@ -53,35 +53,82 @@ class Bot {
         this._listeners = [];
 
         this._reconnectTimer = undefined;
+        this._subscribers = [];
 
         this._temp = -1;
         this._humidity = -1;
 
-        this.on = this.on.bind(this);
-        this.off = this.off.bind(this);
-        this.setTimer = this.setTimer.bind(this);
-        this.applyTimer = this.applyTimer.bind(this);
-        this.clearTimer = this.clearTimer.bind(this);
-        this.timerLost = this.timerLost.bind(this);
-        this.getTimer = this.getTimer.bind(this);
-        this.setNotify = this.setNotify.bind(this);
-        this.setHumidity = this.setHumidity.bind(this);
-        this.getData = this.getData.bind(this);
-        this.humidityWatcher = this.humidityWatcher.bind(this);
-        this.checkUpdates = this.checkUpdates.bind(this);
-        this.setListener = this.setListener.bind(this);
-        this.removeListener = this.removeListener.bind(this);
-        this.applyHumidity = this.applyHumidity.bind(this);
-        this.readData = this.readData.bind(this);
-
         this._commands = {
-            '/on': this.on,
-            '/off': this.off,
-            '/set_hum': this.setHumidity,
-            '/set_timer': this.setTimer,
-            '/set_notify': this.setNotify,
-            '/get_data': this.getData,
+            '/on': (id) => this.on(id),
+            '/off': (id) => this.off(id),
+            '/set_hum': (id) => this.setHumidity(id),
+            '/set_timer': (id) => this.setTimer(id),
+            '/set_notify': (id) => this.setNotify(id),
+            '/get_data': (id) => this.getData(id),
         };
+    }
+
+    getSubscibers() {
+        const subscribers = JSON.parse(E.toString(flash.read(Adress.subscribers) || []) || '[]');
+
+        if (subscribers.length) {
+            this._subscribers = subscribers;
+        }
+
+        return this._subscribers;
+    }
+
+    setSubscribers(subscribers) {
+        flash.write(Adress.subscribers, JSON.stringify(subscribers));
+    }
+
+    getSubscriber(id) {
+        return this.getSubscibers().find(element => element.id === id);
+    }
+
+    setSubscriber(id) {
+        if (this.getSubscriber(id)) return;
+
+        const subscribers = this.getSubscibers().push({
+            id,
+            notify: true
+        });
+
+        this.setSubscribers(this._subscribers);
+    }
+
+    sendNotify(id, message) {
+        this.getSubscibers().forEach(subscriber => {
+            if (subscriber.notify || subscriber.id === id) {
+                // this.sendMessage(id, message);
+            }
+        })
+    }
+
+    setNotify(id) {
+        let message = `${this.getNotify(id)}, send 1 to enable, or 0 to disable`;
+        this.setListener(id, this.applyNotify);
+        this.sendMessage(id, message);
+    }
+
+    applyNotify(id, status) {
+        const subscribers = this.getSubscibers().map(subscriber => {
+            if (subscriber.id === id) {
+                return {
+                    id: subscriber.id,
+                    notify: status === 1 ? true : false
+                }
+            } else {
+                return subscriber;
+            }
+        });
+        this.setSubscribers(subscribers);
+        const message = this.getNotify(id);
+        this.sendMessage(id, message);
+    }
+
+    getNotify(id) {
+        return `Notifications ${this.getSubscriber(id).notify ? 'enabled' : 'disabled'}`;
     }
 
     on(id) {
@@ -89,7 +136,7 @@ class Bot {
         this._status = true;
 
         if (id) {
-            this.sendMessage(id, this.getStatus());
+            this.sendNotify(id, this.getStatus());
         }
     }
 
@@ -98,7 +145,7 @@ class Bot {
         this._status = false;
 
         if (id) {
-            this.sendMessage(id, this.getStatus());
+            this.sendNotify(id, this.getStatus());
         }
     }
 
@@ -108,7 +155,7 @@ class Bot {
 
     setTimer(id) {
         let message = `${this.getTimer()}, send time in minutes, 0 - turn off the timer`;
-        this.setListener(id, this.applyTimer);
+        this.setListener(id, (id, time) => this.applyTimer(id, time));
         this.sendMessage(id, message);
     }
 
@@ -120,9 +167,11 @@ class Bot {
         } else {
             let interval = time * 60 * 1000;
             this._timerSet = new Date(new Date().ms + interval).ms;
-            this._timer = setTimeout(this.off, interval);
+            this._timer = setTimeout(() => {
+                this.off()
+            }, interval);
         }
-        this.sendMessage(id, this.getTimer());
+        this.sendNotify(id, this.getTimer());
     }
 
     clearTimer() {
@@ -142,18 +191,9 @@ class Bot {
         }
     }
 
-    setNotify(enable) {
-        this._notifyEnable = enable;
-        return this.getNotify();
-    }
-
-    getNotify() {
-        return `Notifications ${this._notifyEnable ? 'enabled' : 'disabled'}`;
-    }
-
     setHumidity(id) {
         let message = `The humidity level is set at ${this._humiditySet}, what level of humidity do you want?`;
-        this.setListener(id, this.applyHumidity);
+        this.setListener(id, (id, percent) => this.applyHumidity(id, percent));
         this.sendMessage(id, message);
     }
 
@@ -172,7 +212,7 @@ class Bot {
 
     applyHumidity(id, percent) {
         this._humiditySet = percent;
-        this.sendMessage(id, this.getHumidity());
+        this.sendNotify(id, this.getHumidity());
     }
 
     getHumidity() {
@@ -207,12 +247,12 @@ class Bot {
                 this.on();
             }
 
-            setTimeout(this.humidityWatcher, 5000);
+            setTimeout(() => this.humidityWatcher(), 5000);
         });
     }
 
     init() {
-        setTimeout(this.humidityWatcher, 5000);
+        setTimeout(() => this.humidityWatcher(), 5000);
 
         this.handlers();
         this.connect();
@@ -266,9 +306,10 @@ class Bot {
 
                 if (!answer) return;
 
+                debug && console.log(`Get data ${JSON.stringify(answer)} from ${url}`);
+
                 callback(answer);
 
-                debug && console.log(`Get data ${JSON.stringify(answer)} from ${url}`);
             });
         }).on('error', err => {
             debug && console.log(`Error then try to connect on ${url}`, err);
@@ -288,10 +329,10 @@ class Bot {
                 this.parseMessage(element.message);
             });
 
-            setTimeout(this.checkUpdates, 1500);
+            setTimeout(() => this.checkUpdates(), 1500);
         }, error => {
 
-            setTimeout(this.checkUpdates, 1500);
+            setTimeout(() => this.checkUpdates(), 1500);
         });
     }
 
@@ -299,9 +340,7 @@ class Bot {
         let text = message.text;
         let author = message.from.id;
         let listener = this._listeners.find(element => element.id == author);
-
-        console.log('debug:')
-        console.log(listener, this._listeners, text, author)
+        this.setSubscriber(author)
 
         if (listener) {
             if (~text.indexOf('/')) {
@@ -310,7 +349,7 @@ class Bot {
                 this.sendMessage(author, answer, () => {
                     this.parseMessage(message);
                 });
-                
+
             } else {
                 listener.listener(author, text);
                 this.removeListener(author);
@@ -327,7 +366,7 @@ class Bot {
         }
     }
 
-    
+
 
     sendMessage(id, message, callback) {
         debug && console.log(`Try send message: ${message} to ${id}`);
@@ -337,7 +376,7 @@ class Bot {
         this.service(url, answer => {
             debug && console.log(`Sucscess send message: ${answer.result.text} to ${id}`);
 
-            if(typeof callback === 'function') {
+            if (typeof callback === 'function') {
                 callback();
             }
         }, err => {
@@ -368,12 +407,8 @@ const setWifi = (ssid, password) => {
         ssid,
         password
     }));
-
-    debug && console.log(`Set wifi setttings: ${E.toString(flash.read(Adress.wifi))} to addr: ${Adress.wifi}`);
 };
 
 const setSettings = settings => {
     flash.write(Adress.settings, JSON.stringify(settings));
-
-    debug && console.log(`Set setttings: ${E.toString(flash.read(Adress.settings))} to addr: ${Adress.settings}`);
 };
