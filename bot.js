@@ -14,18 +14,6 @@ wifi.connect(SSID, {
         let method = 'getUpdates';
 
         setTimeout(checker, 1500, `${proxy}${url}${method}`);
-
-        /*    http.get(`${proxy}${url}${method}${makeQueryString(params)}`, function(res) {
-              var contents = "";
-              res.on('data', function(data) { contents += data; });
-              res.on('close', function() {
-                console.log(contents);
-
-                console.log('url:', `${proxy}${url}${method}${makeQueryString(params)}`);
-              });
-            }).on('error', function(e) {
-              console.log("ERROR", e);
-            });*/
     }
 });
 

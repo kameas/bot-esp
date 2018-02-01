@@ -63,72 +63,8 @@ class Bot {
             '/off': (id) => this.off(id),
             '/set_hum': (id) => this.setHumidity(id),
             '/set_timer': (id) => this.setTimer(id),
-            '/set_notify': (id) => this.setNotify(id),
             '/get_data': (id) => this.getData(id),
         };
-    }
-
-    getSubscibers() {
-        const subscribers = JSON.parse(E.toString(flash.read(Adress.subscribers) || []) || '[]');
-
-        if (subscribers.length) {
-            this._subscribers = subscribers;
-        }
-
-        return this._subscribers;
-    }
-
-    setSubscribers(subscribers) {
-        flash.write(Adress.subscribers, JSON.stringify(subscribers));
-    }
-
-    getSubscriber(id) {
-        return this.getSubscibers().find(element => element.id === id);
-    }
-
-    setSubscriber(id) {
-        if (this.getSubscriber(id)) return;
-
-        const subscribers = this.getSubscibers().push({
-            id,
-            notify: true
-        });
-
-        this.setSubscribers(this._subscribers);
-    }
-
-    sendNotify(id, message) {
-        this.getSubscibers().forEach(subscriber => {
-            if (subscriber.notify || subscriber.id === id) {
-                // this.sendMessage(id, message);
-            }
-        })
-    }
-
-    setNotify(id) {
-        let message = `${this.getNotify(id)}, send 1 to enable, or 0 to disable`;
-        this.setListener(id, this.applyNotify);
-        this.sendMessage(id, message);
-    }
-
-    applyNotify(id, status) {
-        const subscribers = this.getSubscibers().map(subscriber => {
-            if (subscriber.id === id) {
-                return {
-                    id: subscriber.id,
-                    notify: status === 1 ? true : false
-                }
-            } else {
-                return subscriber;
-            }
-        });
-        this.setSubscribers(subscribers);
-        const message = this.getNotify(id);
-        this.sendMessage(id, message);
-    }
-
-    getNotify(id) {
-        return `Notifications ${this.getSubscriber(id).notify ? 'enabled' : 'disabled'}`;
     }
 
     on(id) {
@@ -136,7 +72,7 @@ class Bot {
         this._status = true;
 
         if (id) {
-            this.sendNotify(id, this.getStatus());
+            this.sendMessage(id, this.getStatus());
         }
     }
 
@@ -145,7 +81,7 @@ class Bot {
         this._status = false;
 
         if (id) {
-            this.sendNotify(id, this.getStatus());
+            this.sendMessage(id, this.getStatus());
         }
     }
 
@@ -171,7 +107,7 @@ class Bot {
                 this.off()
             }, interval);
         }
-        this.sendNotify(id, this.getTimer());
+        this.sendMessage(id, this.getTimer());
     }
 
     clearTimer() {
@@ -212,7 +148,7 @@ class Bot {
 
     applyHumidity(id, percent) {
         this._humiditySet = percent;
-        this.sendNotify(id, this.getHumidity());
+        this.sendMessage(id, this.getHumidity());
     }
 
     getHumidity() {
@@ -296,7 +232,6 @@ class Bot {
 
             res.on('close', () => {
                 let answer;
-
                 try {
                     answer = JSON.parse(contents);
                 } catch (err) {
@@ -340,7 +275,6 @@ class Bot {
         let text = message.text;
         let author = message.from.id;
         let listener = this._listeners.find(element => element.id == author);
-        this.setSubscriber(author)
 
         if (listener) {
             if (~text.indexOf('/')) {
@@ -369,9 +303,9 @@ class Bot {
 
 
     sendMessage(id, message, callback) {
-        debug && console.log(`Try send message: ${message} to ${id}`);
 
         const url = `${this._proxy}${encodeURIComponent(`https://api.telegram.org/bot${this._token}/sendMessage?chat_id=${id}&text=${message}`)}`;
+        debug && console.log(`Try send message: ${message} to ${id} url is ${url}`);
 
         this.service(url, answer => {
             debug && console.log(`Sucscess send message: ${answer.result.text} to ${id}`);
