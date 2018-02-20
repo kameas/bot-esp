@@ -2,7 +2,7 @@ const wifi = require("Wifi");
 const http = require("http");
 const flash = new (require("FlashEEPROM"))();
 const debug = true;
-const dht = require("DHT22").connect(D4);
+const dht = require("DHT11").connect(D4);
 
 Object.defineProperty(Array.prototype, 'find', {
     enumerable: false,
@@ -163,10 +163,14 @@ class Bot {
     }
 
     readData(callback) {
+        digitalWrite(D12, true);
+
         dht.read((data) => {
             if (data.err) {
                 debug && console.log('Error then try to check temp and hum');
             }
+
+            debug && console.log(`Data from module: ${JSON.stringify(data)}`);
 
             this._temp = data.temp;
             this._humidity = data.rh;
@@ -175,31 +179,28 @@ class Bot {
         });
     }
 
-    humidityWatcher() {
-        this.readData(() => {
-            if (this._humidity > this._humiditySet) {
-                this.off();
-            } else if (this._humidity < this._humiditySet - this._humOffset) {
-                this.on();
-            }
-
-            setTimeout(() => this.humidityWatcher(), 5000);
-        });
-    }
+    // watcher() {
+    //     this.readData(() => {
+    //         if (this._humidity > (this._humiditySet + this._humOffset)) {
+    //             this.off();
+    //         } else if (this._humidity < this._humiditySet) {
+    //             this.on();
+    //         }
+    //     })
+    // }
 
     init() {
-        setTimeout(() => this.humidityWatcher(), 5000);
-
         this.handlers();
         this.connect();
     }
 
     handlers() {
         wifi.on('connected', details => {
-            this.checkUpdates();
-
-            clearTimeout(this._reconnectTimer);
-            this._reconnectTimer = undefined;
+            this.readData(() => {
+                this.checkUpdates();
+                clearTimeout(this._reconnectTimer);
+                // this._reconnectTimer = undefined;
+            })
 
             debug && console.log(`Wifi is connected`);
         });
@@ -207,7 +208,7 @@ class Bot {
         wifi.on('disconnected', details => {
             debug && console.log(`Wifi is disconnected, ${details.reason}, try to reconnect`);
 
-            this._reconnectTimer = setTimeout(this.connect, 1500);
+            this._reconnectTimer = setTimeout(() => this.connect(), 5000);
         });
     }
 
@@ -215,10 +216,6 @@ class Bot {
         wifi.connect(this._ssid, {
             password: this._password
         });
-
-        if (this._reconnectTimer) {
-            this._reconnectTimer = setTimeout(this.connect, 1500);
-        }
     }
 
     service(url, callback, error) {
@@ -264,10 +261,10 @@ class Bot {
                 this.parseMessage(element.message);
             });
 
-            setTimeout(() => this.checkUpdates(), 1500);
+            setTimeout(() => this.checkUpdates(), 5000);
         }, error => {
 
-            setTimeout(() => this.checkUpdates(), 1500);
+            setTimeout(() => this.checkUpdates(), 5000);
         });
     }
 
@@ -346,3 +343,5 @@ const setWifi = (ssid, password) => {
 const setSettings = settings => {
     flash.write(Adress.settings, JSON.stringify(settings));
 };
+
+connect();
