@@ -2,7 +2,7 @@ const wifi = require("Wifi");
 const http = require("http");
 const flash = new (require("FlashEEPROM"))();
 const debug = true;
-const dht = require("DHT11").connect(D4);
+const dht = require("DHT22").connect(D4);
 
 Object.defineProperty(Array.prototype, 'find', {
     enumerable: false,
@@ -189,7 +189,6 @@ class Bot {
             }
 
             this.checkUpdates();
-            setTimeout(() => this.watcher(), 1500)
         })
     }
 
@@ -200,12 +199,10 @@ class Bot {
 
     handlers() {
         wifi.on('connected', details => {
-            this.watcher();
-            this.readData(() => {
-                // this.checkUpdates();
-                // this._reconnectTimer = undefined;
-            })
-            
+            // this.watcher();
+            this.checkUpdates();
+            // this._reconnectTimer = undefined;
+
             clearTimeout(this._reconnectTimer);
 
             debug && console.log(`Wifi is connected`);
@@ -268,6 +265,7 @@ class Bot {
             });
 
             // setTimeout(() => this.checkUpdates(), 5000);
+            setTimeout(() => this.watcher(), 1500)
         }, error => {
 
             // setTimeout(() => this.checkUpdates(), 5000);
@@ -326,7 +324,7 @@ const connect = () => {
     const { ssid, password } = JSON.parse(E.toString(flash.read(Adress.wifi)));
     const { token, proxy, mosfetPin, humiditySet, humOffset } = JSON.parse(E.toString(flash.read(Adress.settings)));
 
-    const bot = new Bot({
+    global.bot = new Bot({
         ssid,
         password,
         token,
