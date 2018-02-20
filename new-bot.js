@@ -51,6 +51,7 @@ class Bot {
         this._notifyEnable = true;
         this._status = false;
         this._listeners = [];
+        this._forceOff = false;
 
         this._reconnectTimer = undefined;
         this._subscribers = [];
@@ -75,6 +76,7 @@ class Bot {
 
         if (id) {
             this.sendMessage(id, this.getStatus());
+            this._forceOff = false;
         }
     }
 
@@ -84,6 +86,7 @@ class Bot {
 
         if (id) {
             this.sendMessage(id, this.getStatus());
+            this._forceOff = true;
         }
     }
 
@@ -185,7 +188,9 @@ class Bot {
             if (this._humidity > (this._humiditySet + this._humOffset)) {
                 this.off();
             } else if (this._humidity < this._humiditySet) {
-                this.on();
+                if (!this._forceOff) {
+                    this.on();
+                }
             }
 
             this.checkUpdates();
