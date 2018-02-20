@@ -65,6 +65,8 @@ class Bot {
             '/set_timer': (id) => this.setTimer(id),
             '/get_data': (id) => this.getData(id),
         };
+
+        digitalWrite(D12, true);
     }
 
     on(id) {
@@ -163,7 +165,6 @@ class Bot {
     }
 
     readData(callback) {
-        digitalWrite(D12, true);
 
         dht.read((data) => {
             if (data.err) {
@@ -179,15 +180,18 @@ class Bot {
         });
     }
 
-    // watcher() {
-    //     this.readData(() => {
-    //         if (this._humidity > (this._humiditySet + this._humOffset)) {
-    //             this.off();
-    //         } else if (this._humidity < this._humiditySet) {
-    //             this.on();
-    //         }
-    //     })
-    // }
+    watcher() {
+        this.readData(() => {
+            if (this._humidity > (this._humiditySet + this._humOffset)) {
+                this.off();
+            } else if (this._humidity < this._humiditySet) {
+                this.on();
+            }
+
+            this.checkUpdates();
+            setTimeout(() => this.watcher(), 1500)
+        })
+    }
 
     init() {
         this.handlers();
@@ -196,11 +200,13 @@ class Bot {
 
     handlers() {
         wifi.on('connected', details => {
+            this.watcher();
             this.readData(() => {
-                this.checkUpdates();
-                clearTimeout(this._reconnectTimer);
+                // this.checkUpdates();
                 // this._reconnectTimer = undefined;
             })
+            
+            clearTimeout(this._reconnectTimer);
 
             debug && console.log(`Wifi is connected`);
         });
@@ -261,10 +267,10 @@ class Bot {
                 this.parseMessage(element.message);
             });
 
-            setTimeout(() => this.checkUpdates(), 5000);
+            // setTimeout(() => this.checkUpdates(), 5000);
         }, error => {
 
-            setTimeout(() => this.checkUpdates(), 5000);
+            // setTimeout(() => this.checkUpdates(), 5000);
         });
     }
 
