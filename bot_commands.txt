@@ -4,3 +4,9 @@ set_hum - set humidity percent
 get_data - get sensor data
 set_notify - setting reminders
 set_timer - timer setting
+
+setSettings({
+    mosfetPin: 'D13',
+    humiditySet: 50,
+    humOffset: 10
+})

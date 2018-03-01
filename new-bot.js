@@ -1,7 +1,7 @@
 const wifi = require("Wifi");
 const http = require("http");
 const flash = new (require("FlashEEPROM"))();
-const debug = true;
+const debug = false;
 const dht = require("DHT22").connect(D4);
 
 Object.defineProperty(Array.prototype, 'find', {
@@ -109,6 +109,7 @@ class Bot {
             let interval = time * 60 * 1000;
             this._timerSet = new Date(new Date().ms + interval).ms;
             this._timer = setTimeout(() => {
+                this._forceOff = true;
                 this.off()
             }, interval);
         }
@@ -205,6 +206,7 @@ class Bot {
     handlers() {
         wifi.on('connected', details => {
             // this.watcher();
+            wifi.stopAP();
             this.checkUpdates();
             // this._reconnectTimer = undefined;
 
